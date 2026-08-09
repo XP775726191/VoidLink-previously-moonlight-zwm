@@ -3,38 +3,36 @@ name: Build VoidLink IPA
 
 on:
   push:
-    branches: [ "Integration" ]  # 当向 Integration 分支推送代码时触发
-  workflow_dispatch:             # 允许你从 GitHub 网页手动触发
+    branches: [ "ReadmeBranch" ]   # 改用到 ReadmeBranch 分支（避免 Integration 的兼容性问题）
+  workflow_dispatch:               # 允许手动触发
 
 jobs:
   build:
     name: Build iOS App
-    runs-on: macos-latest        # 使用 GitHub 提供的 macOS 环境[reference:7][reference:8]
+    runs-on: macos-latest          # 使用 GitHub 提供的 macOS 环境
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4 # 拉取你的代码[reference:9]
+        uses: actions/checkout@v4  # 拉取代码
 
-      - name: Archive Project
+      # 如果项目使用 CocoaPods，自动安装依赖（可选）
+      - name: Install Dependencies
         run: |
-          xcodebuild archive \
-            -project VoidLink.xcodeproj \          # 项目文件路径[reference:10]
-            -scheme VoidLink \                     # 项目 Scheme 名称
-            -sdk iphoneos \                        # 为真机编译
-            -configuration Release \               # 使用 Release 配置
-            -archivePath VoidLink.xcarchive \      # 归档文件输出路径
-            CODE_SIGNING_ALLOWED=NO                # 关键：禁用代码签名[reference:11][reference:12]
+          if [ -f "Podfile" ]; then
+            pod install
+          fi
+
+      # 核心修复：将所有参数合并为一行，避免换行解析问题
+      - name: Archive Project
+        run: xcodebuild -project VoidLink.xcodeproj -scheme VoidLink -sdk iphoneos -configuration Release -archivePath VoidLink.xcarchive CODE_SIGNING_ALLOWED=NO archive
 
       - name: Create IPA from Archive
         run: |
-          # 创建用于存放 .app 的 Payload 文件夹
           mkdir -p Payload
-          # 从 .xcarchive 中取出 .app 并复制到 Payload
           cp -R VoidLink.xcarchive/Products/Applications/VoidLink.app Payload/
-          # 将 Payload 文件夹压缩并重命名为 .ipa[reference:13]
           zip -r VoidLink.ipa Payload/
-          
+
       - name: Upload IPA as Artifact
-        uses: actions/upload-artifact@v4 # 上传构建产物[reference:14][reference:15]
+        uses: actions/upload-artifact@v4
         with:
-          name: VoidLink-unsigned.ipa  # 下载的压缩包名称
-          path: VoidLink.ipa           # 要上传的文件路径
+          name: VoidLink-unsigned.ipa
+          path: VoidLink.ipa
