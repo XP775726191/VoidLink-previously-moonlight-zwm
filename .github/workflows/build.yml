@@ -11,37 +11,33 @@ jobs:
     name: Build iOS App
     runs-on: macos-latest
     steps:
-      # 1. 检出代码（不自动拉取子模块，后面手动处理更可靠）
+      # 1. 检出代码（不自动拉取子模块）
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          submodules: false   # 先不自动拉取，手动控制
+          submodules: false
 
-      # 2. 强制更新所有子模块（包括嵌套）
-      - name: Update submodules
+      # 2. 手动配置子模块 URL 并更新
+      - name: Fix and update submodules
         run: |
+          # 配置缺失的 URL
+          git config -f .gitmodules submodule.moonlight-common/moonlight-common-c.url https://github.com/TrueZhuangJia/voidlink-c.git
+          # 同步配置
           git submodule sync --recursive
+          # 强制更新所有子模块
           git submodule update --init --recursive --force
 
-      # 3. 调试：列出根目录和 moonlight-common 目录内容
-      - name: List directories for debugging
+      # 3. 验证子模块是否拉取成功
+      - name: Verify submodules
         run: |
-          echo "=== Root directory ==="
-          ls -la
-          echo "=== .gitmodules content ==="
-          cat .gitmodules || echo "No .gitmodules"
-          echo "=== moonlight-common directory ==="
-          ls -la moonlight-common/ || echo "moonlight-common not found"
-          if [ -d "moonlight-common/moonlight-common-c" ]; then
-            echo "moonlight-common-c exists"
-            ls -la moonlight-common/moonlight-common-c/
-            echo "=== enet directory ==="
-            ls -la moonlight-common/moonlight-common-c/enet/ || echo "enet not found"
-          else
-            echo "moonlight-common-c does NOT exist!"
-          fi
+          echo "=== Checking moonlight-common-c ==="
+          ls -la moonlight-common/moonlight-common-c/ || echo "ERROR: moonlight-common-c not found"
+          echo "=== Checking enet directory ==="
+          ls -la moonlight-common/moonlight-common-c/enet/ || echo "ERROR: enet not found"
+          echo "=== Checking protocol.c ==="
+          ls -la moonlight-common/moonlight-common-c/enet/protocol.c || echo "ERROR: protocol.c not found"
 
-      # 4. 查找项目文件
+      # 4. 查找并列出项目文件
       - name: Find Xcode project
         id: find_project
         run: |
@@ -59,7 +55,7 @@ jobs:
           PROJECT_PATH="${{ steps.find_project.outputs.project_path }}"
           xcodebuild -list -project "$PROJECT_PATH"
 
-      # 6. 移除跨平台源文件引用（win32.c, linux.c）
+      # 6. 移除跨平台文件引用（win32.c, linux.c）
       - name: Remove cross-platform sources
         run: |
           PROJECT_PATH="${{ steps.find_project.outputs.project_path }}"
@@ -68,6 +64,8 @@ jobs:
             echo "Removing win32.c and linux.c references"
             sed -i '' '/win32.c/d' "$PBXPROJ"
             sed -i '' '/linux.c/d' "$PBXPROJ"
+          else
+            echo "project.pbxproj not found, skipping."
           fi
 
       # 7. 安装 CocoaPods 依赖
