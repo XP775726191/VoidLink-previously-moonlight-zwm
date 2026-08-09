@@ -3,7 +3,7 @@ name: Build VoidLink IPA
 
 on:
   push:
-    branches: [ "Integration" ]   # 切换到开发分支
+    branches: [ "Integration" ]
   workflow_dispatch:
 
 jobs:
@@ -11,19 +11,37 @@ jobs:
     name: Build iOS App
     runs-on: macos-latest
     steps:
-      # 1. 检出代码，递归拉取子模块
+      # 1. 检出代码（不自动拉取子模块，后面手动处理更可靠）
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          submodules: recursive   # 确保拉取所有子模块
+          submodules: false   # 先不自动拉取，手动控制
 
-      # 2. 手动更新子模块（保险）
+      # 2. 强制更新所有子模块（包括嵌套）
       - name: Update submodules
         run: |
           git submodule sync --recursive
           git submodule update --init --recursive --force
 
-      # 3. 查找项目文件（输出路径供后续使用）
+      # 3. 调试：列出根目录和 moonlight-common 目录内容
+      - name: List directories for debugging
+        run: |
+          echo "=== Root directory ==="
+          ls -la
+          echo "=== .gitmodules content ==="
+          cat .gitmodules || echo "No .gitmodules"
+          echo "=== moonlight-common directory ==="
+          ls -la moonlight-common/ || echo "moonlight-common not found"
+          if [ -d "moonlight-common/moonlight-common-c" ]; then
+            echo "moonlight-common-c exists"
+            ls -la moonlight-common/moonlight-common-c/
+            echo "=== enet directory ==="
+            ls -la moonlight-common/moonlight-common-c/enet/ || echo "enet not found"
+          else
+            echo "moonlight-common-c does NOT exist!"
+          fi
+
+      # 4. 查找项目文件
       - name: Find Xcode project
         id: find_project
         run: |
@@ -35,26 +53,24 @@ jobs:
           echo "project_path=$PROJECT_PATH" >> $GITHUB_OUTPUT
           echo "Found project: $PROJECT_PATH"
 
-      # 4. 列出可用 Schemes（调试用，同时获取 Scheme 名称）
+      # 5. 列出 Schemes
       - name: List schemes
         run: |
           PROJECT_PATH="${{ steps.find_project.outputs.project_path }}"
           xcodebuild -list -project "$PROJECT_PATH"
 
-      # 5. 从项目中移除 win32.c 和 linux.c 的引用（避免编译错误）
+      # 6. 移除跨平台源文件引用（win32.c, linux.c）
       - name: Remove cross-platform sources
         run: |
           PROJECT_PATH="${{ steps.find_project.outputs.project_path }}"
           PBXPROJ="$PROJECT_PATH/project.pbxproj"
           if [ -f "$PBXPROJ" ]; then
-            echo "Removing win32.c and linux.c references from $PBXPROJ"
+            echo "Removing win32.c and linux.c references"
             sed -i '' '/win32.c/d' "$PBXPROJ"
             sed -i '' '/linux.c/d' "$PBXPROJ"
-          else
-            echo "project.pbxproj not found, skipping."
           fi
 
-      # 6. 安装 CocoaPods 依赖（如果存在 Podfile）
+      # 7. 安装 CocoaPods 依赖
       - name: Install Pods
         run: |
           if [ -f "Podfile" ]; then
@@ -63,23 +79,22 @@ jobs:
             cd moonlight-common && pod install
           fi
 
-      # 7. 编译归档（使用找到的项目文件，Scheme 名称自动推断，但需确认）
+      # 8. 编译归档
       - name: Archive Project
         run: |
           PROJECT_PATH="${{ steps.find_project.outputs.project_path }}"
-          # 从项目路径提取 scheme（通常与项目名相同）
           SCHEME_NAME=$(basename "$PROJECT_PATH" .xcodeproj)
           echo "Using scheme: $SCHEME_NAME"
           xcodebuild -project "$PROJECT_PATH" -scheme "$SCHEME_NAME" -sdk iphoneos -configuration Release -archivePath VoidLink.xcarchive CODE_SIGNING_ALLOWED=NO archive
 
-      # 8. 打包 IPA
+      # 9. 打包 IPA
       - name: Create IPA
         run: |
           mkdir -p Payload
           cp -R VoidLink.xcarchive/Products/Applications/*.app Payload/
           zip -r VoidLink.ipa Payload/
 
-      # 9. 上传产物
+      # 10. 上传
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
