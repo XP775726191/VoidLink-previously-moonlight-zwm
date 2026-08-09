@@ -11,10 +11,18 @@ jobs:
     name: Build iOS App
     runs-on: macos-latest
     steps:
+      # 关键修改：启用子模块拉取
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          submodules: true   # 自动初始化并更新子模块
 
-      # 列出项目中的所有 Schemes，方便确认名称
+      # 可选：显示子模块状态，便于调试
+      - name: Check submodules
+        run: |
+          git submodule status
+
+      # 列出可用的 Schemes（确认无误）
       - name: List available schemes
         run: |
           xcodebuild -list -project moonlight-common/moonlight-common.xcodeproj
@@ -30,7 +38,7 @@ jobs:
             fi
           fi
 
-      # 编译（假设 Scheme 名称为 moonlight-common，若不同请修改 -scheme 参数）
+      # 编译（Scheme 确认为 moonlight-common）
       - name: Archive Project
         run: |
           xcodebuild -project moonlight-common/moonlight-common.xcodeproj -scheme moonlight-common -sdk iphoneos -configuration Release -archivePath VoidLink.xcarchive CODE_SIGNING_ALLOWED=NO archive
