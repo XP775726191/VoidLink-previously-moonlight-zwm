@@ -2,7 +2,7 @@ name: Build VoidLink IPA
 
 on:
   push:
-    branches: [ "Integration" ]
+    branches: [ "ReadmeBranch" ]
   workflow_dispatch:
 
 jobs:
