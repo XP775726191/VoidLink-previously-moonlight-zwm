@@ -2,29 +2,37 @@ name: Build VoidLink IPA
 
 on:
   push:
-    branches: [ "feat/frame_pacing_metal" ]
+    branches: [ "Integration" ]
+  workflow_dispatch:
 
 jobs:
   build:
-    name: Build VoidLink IPA
+    name: Build iOS App
     runs-on: macos-latest
-
+    
     steps:
-      - name: Checkout
-        uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: Checkout submodules
-        run: "git submodule update --init --recursive"
-
-      - name: Build VoidLink
+      - name: Archive Project
         run: |
-          xcodebuild -verbose -scheme VoidLink -sdk iphoneos -configuration Debug archive -archivePath $PWD/build/VoidLink.xcarchive CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED="NO" CODE_SIGN_ENTITLEMENTS="" CODE_SIGNING_ALLOWED="NO"
-          mkdir -p ./build/IPA && mkdir -p ./build/IPA/Payload
-          cp -r ./build/VoidLink.xcarchive/Products/Applications/VoidLink.app ./build/IPA/Payload/VoidLink.app
-          cd ./build/IPA && zip -r ../../build/VoidLink.ipa ./Payload/* && cd ../..
+          xcodebuild \
+            -project VoidLink.xcodeproj \
+            -scheme VoidLink \
+            -sdk iphoneos \
+            -configuration Release \
+            -archivePath VoidLink.xcarchive \
+            CODE_SIGNING_ALLOWED=NO \
+            archive
 
-      - name: Upload VoidLink IPA to Artifacts
+      - name: Create IPA from Archive
+        run: |
+          mkdir -p Payload
+          cp -R VoidLink.xcarchive/Products/Applications/VoidLink.app Payload/
+          zip -r VoidLink.ipa Payload/
+
+      - name: Upload IPA as Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: VoidLink.ipa
-          path: build/VoidLink.ipa
+          name: VoidLink-unsigned.ipa
+          path: VoidLink.ipa
