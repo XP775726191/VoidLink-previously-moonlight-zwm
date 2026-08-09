@@ -14,13 +14,35 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 关键：搜索所有 .xcodeproj 和 .xcworkspace 文件
-      - name: Find Xcode project files
+      # 列出项目中的所有 Schemes，方便确认名称
+      - name: List available schemes
         run: |
-          echo "=== Searching for .xcodeproj ==="
-          find . -name "*.xcodeproj" -type d
-          echo "=== Searching for .xcworkspace ==="
-          find . -name "*.xcworkspace" -type d
+          xcodebuild -list -project moonlight-common/moonlight-common.xcodeproj
 
-      # 暂时注释掉编译步骤，先观察输出
-      # （等确定路径后再取消注释）
+      # 安装 CocoaPods 依赖（如果存在）
+      - name: Install Dependencies
+        run: |
+          if [ -f "Podfile" ]; then
+            pod install
+          else
+            if [ -f "moonlight-common/Podfile" ]; then
+              cd moonlight-common && pod install
+            fi
+          fi
+
+      # 编译（假设 Scheme 名称为 moonlight-common，若不同请修改 -scheme 参数）
+      - name: Archive Project
+        run: |
+          xcodebuild -project moonlight-common/moonlight-common.xcodeproj -scheme moonlight-common -sdk iphoneos -configuration Release -archivePath VoidLink.xcarchive CODE_SIGNING_ALLOWED=NO archive
+
+      - name: Create IPA from Archive
+        run: |
+          mkdir -p Payload
+          cp -R VoidLink.xcarchive/Products/Applications/*.app Payload/
+          zip -r VoidLink.ipa Payload/
+
+      - name: Upload IPA as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoidLink-unsigned.ipa
+          path: VoidLink.ipa
