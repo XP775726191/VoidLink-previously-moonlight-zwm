@@ -3,32 +3,36 @@ name: Build VoidLink IPA
 
 on:
   push:
-    branches: [ "ReadmeBranch" ]   # 改用到 ReadmeBranch 分支（避免 Integration 的兼容性问题）
-  workflow_dispatch:               # 允许手动触发
+    branches: [ "ReadmeBranch" ]      # 使用稳定分支
+  workflow_dispatch:                  # 允许手动触发
 
 jobs:
   build:
     name: Build iOS App
-    runs-on: macos-latest          # 使用 GitHub 提供的 macOS 环境
+    runs-on: macos-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4  # 拉取代码
+        uses: actions/checkout@v4
 
-      # 如果项目使用 CocoaPods，自动安装依赖（可选）
+      # 进入 Limelight 目录安装 CocoaPods 依赖（如果存在 Podfile）
       - name: Install Dependencies
         run: |
+          cd Limelight
           if [ -f "Podfile" ]; then
             pod install
           fi
 
-      # 核心修复：将所有参数合并为一行，避免换行解析问题
+      # 在 Limelight 目录下编译，指定项目文件和 scheme（假设 scheme 名为 Limelight）
       - name: Archive Project
-        run: xcodebuild -project VoidLink.xcodeproj -scheme VoidLink -sdk iphoneos -configuration Release -archivePath VoidLink.xcarchive CODE_SIGNING_ALLOWED=NO archive
+        run: |
+          cd Limelight
+          xcodebuild -project Limelight.xcodeproj -scheme Limelight -sdk iphoneos -configuration Release -archivePath ../VoidLink.xcarchive CODE_SIGNING_ALLOWED=NO archive
 
+      # 从归档中提取 .app，打包成 IPA
       - name: Create IPA from Archive
         run: |
           mkdir -p Payload
-          cp -R VoidLink.xcarchive/Products/Applications/VoidLink.app Payload/
+          cp -R VoidLink.xcarchive/Products/Applications/*.app Payload/
           zip -r VoidLink.ipa Payload/
 
       - name: Upload IPA as Artifact
