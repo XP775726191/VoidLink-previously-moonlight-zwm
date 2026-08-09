@@ -3,35 +3,92 @@ name: Build VoidLink IPA
 
 on:
   push:
-    branches: [ "Integration" ]      # 切回真正的开发分支
-  workflow_dispatch:                 # 允许手动触发
+    branches: [ "Integration" ]
+  workflow_dispatch:
 
 jobs:
   build:
     name: Build iOS App
     runs-on: macos-latest
     steps:
+      # 1. 检出代码（不自动拉取子模块）
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          submodules: false
 
-      # 安装 CocoaPods 依赖
-      - name: Install Dependencies
+      # 2. 手动配置子模块 URL 并更新
+      - name: Fix and update submodules
+        run: |
+          git config -f .gitmodules submodule.moonlight-common/moonlight-common-c.url https://github.com/TrueZhuangJia/voidlink-c.git
+          git submodule sync --recursive
+          git submodule update --init --recursive --force
+
+      # 3. 验证子模块是否拉取成功
+      - name: Verify submodules
+        run: |
+          echo "=== Checking moonlight-common-c ==="
+          ls -la moonlight-common/moonlight-common-c/ || echo "ERROR: moonlight-common-c not found"
+          echo "=== Checking enet directory ==="
+          ls -la moonlight-common/moonlight-common-c/enet/ || echo "ERROR: enet not found"
+          echo "=== Checking protocol.c ==="
+          ls -la moonlight-common/moonlight-common-c/enet/protocol.c || echo "ERROR: protocol.c not found"
+
+      # 4. 查找项目文件
+      - name: Find Xcode project
+        id: find_project
+        run: |
+          PROJECT_PATH=$(find . -name "*.xcodeproj" -not -path "*/Pods/*" -type d | head -n 1)
+          if [ -z "$PROJECT_PATH" ]; then
+            echo "No .xcodeproj found!"
+            exit 1
+          fi
+          echo "project_path=$PROJECT_PATH" >> $GITHUB_OUTPUT
+          echo "Found project: $PROJECT_PATH"
+
+      # 5. 列出 Schemes
+      - name: List schemes
+        run: |
+          PROJECT_PATH="${{ steps.find_project.outputs.project_path }}"
+          xcodebuild -list -project "$PROJECT_PATH"
+
+      # 6. 移除跨平台源文件引用（win32.c, linux.c）
+      - name: Remove cross-platform sources
+        run: |
+          PROJECT_PATH="${{ steps.find_project.outputs.project_path }}"
+          PBXPROJ="$PROJECT_PATH/project.pbxproj"
+          if [ -f "$PBXPROJ" ]; then
+            echo "Removing win32.c and linux.c references"
+            sed -i '' '/win32.c/d' "$PBXPROJ"
+            sed -i '' '/linux.c/d' "$PBXPROJ"
+          fi
+
+      # 7. 安装 CocoaPods 依赖
+      - name: Install Pods
         run: |
           if [ -f "Podfile" ]; then
             pod install
+          elif [ -f "moonlight-common/Podfile" ]; then
+            cd moonlight-common && pod install
           fi
 
-      # 注意：项目文件在 moonlight-common 子目录下，Scheme 名称可能是 moonlight-common 或 VoidLink
+      # 8. 编译归档
       - name: Archive Project
-        run: xcodebuild -project moonlight-common/moonlight-common.xcodeproj -scheme moonlight-common -sdk iphoneos -configuration Release -archivePath VoidLink.xcarchive CODE_SIGNING_ALLOWED=NO archive
+        run: |
+          PROJECT_PATH="${{ steps.find_project.outputs.project_path }}"
+          SCHEME_NAME=$(basename "$PROJECT_PATH" .xcodeproj)
+          echo "Using scheme: $SCHEME_NAME"
+          xcodebuild -project "$PROJECT_PATH" -scheme "$SCHEME_NAME" -sdk iphoneos -configuration Release -archivePath VoidLink.xcarchive CODE_SIGNING_ALLOWED=NO archive
 
-      - name: Create IPA from Archive
+      # 9. 打包 IPA
+      - name: Create IPA
         run: |
           mkdir -p Payload
           cp -R VoidLink.xcarchive/Products/Applications/*.app Payload/
           zip -r VoidLink.ipa Payload/
 
-      - name: Upload IPA as Artifact
+      # 10. 上传
+      - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
           name: VoidLink-unsigned.ipa
